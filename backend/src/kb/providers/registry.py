@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from functools import cache
 
+from pydantic import SecretStr
+
 from kb.config import Settings, get_settings
 from kb.providers.base import LLM, CircuitBreaker, Embedder, ProviderError, Reranker
 from kb.providers.fake import FakeEmbedder, FakeLLM, FakeReranker
 
 
-def _secret(value) -> str | None:  # type: ignore[no-untyped-def]
+def _secret(value: SecretStr | None) -> str | None:
     return value.get_secret_value() if value is not None else None
 
 

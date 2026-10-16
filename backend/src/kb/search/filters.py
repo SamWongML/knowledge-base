@@ -9,14 +9,14 @@ pushdown instead of forcing a join (a join also triggers a "JoinScan not used" W
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, LiteralString
 
 from kb.schemas import SearchFilters
 
 
-def filter_sql(filters: SearchFilters) -> tuple[str, dict[str, Any]]:
+def filter_sql(filters: SearchFilters) -> tuple[LiteralString, dict[str, Any]]:
     """Return ``(" and ...", params)``; the fragment is empty when nothing is filtered."""
-    parts: list[str] = []
+    parts: list[LiteralString] = []
     params: dict[str, Any] = {}
     if filters.collections is not None:
         parts.append(
@@ -26,7 +26,7 @@ def filter_sql(filters: SearchFilters) -> tuple[str, dict[str, Any]]:
     if filters.document_ids is not None:
         parts.append("c.document_id = any(%(f_docs)s::uuid[])")
         params["f_docs"] = list(filters.document_ids)
-    doc_conds: list[str] = []
+    doc_conds: list[LiteralString] = []
     if filters.tags:
         doc_conds.append("tags && %(f_tags)s::text[]")
         params["f_tags"] = list(filters.tags)

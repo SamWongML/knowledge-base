@@ -32,6 +32,7 @@ import structlog
 from kb.agent import prompts as P
 from kb.agent.parsing import ThinkFilter, cited_numbers, parse_json_object
 from kb.config import get_settings
+from kb.events import broker
 from kb.providers import LLM, ChatMessage, ProviderError, get_llm
 from kb.schemas import (
     AgentStep,
@@ -41,6 +42,7 @@ from kb.schemas import (
     SearchHit,
     SearchRequest,
     SearchResponse,
+    StepType,
 )
 
 log = structlog.get_logger(__name__)
@@ -80,6 +82,7 @@ async def ask_stream(req: AskRequest) -> AsyncGenerator[AgentStep | AskResponse,
     """
     started = time.perf_counter()
     key = _cache_key(req)
+    generation = _generation
     if (cached := _cache_get(key)) is not None:
         for step in cached.steps:
             yield step
@@ -107,7 +110,7 @@ async def ask_stream(req: AskRequest) -> AsyncGenerator[AgentStep | AskResponse,
         engine=agent.engine_label,
         ms=round(response.total_ms),
     )
-    if not any(s.type == "error" for s in agent.steps):
+    if not any(s.type == "error" for s in agent.steps) and generation == _generation:
         _cache_put(key, response)
     yield response
 
@@ -119,6 +122,19 @@ def clear_cache() -> None:
 # --- answer cache --------------------------------------------------------------------
 
 _cache: OrderedDict[tuple[Any, ...], tuple[float, AskResponse]] = OrderedDict()
+# Bumped whenever any document changes (in any process, via the event broker): cached
+# answers are dropped, and an answer computed across a change is not cached.
+_generation = 0
+
+
+def _invalidate(event: dict[str, Any]) -> None:
+    global _generation
+    if str(event.get("type", "")).startswith("document"):
+        _generation += 1
+        _cache.clear()
+
+
+broker.add_listener(_invalidate)
 
 
 def _cache_key(req: AskRequest) -> tuple[Any, ...]:
@@ -244,8 +260,8 @@ class _Agent:
 
     # -- helpers ------------------------------------------------------------------
 
-    def _step(self, type_: str, message: str = "", **kw: Any) -> AgentStep:
-        step = AgentStep(type=type_, message=message, **kw)  # type: ignore[arg-type]
+    def _step(self, type_: StepType, message: str = "", **kw: Any) -> AgentStep:
+        step = AgentStep(type=type_, message=message, **kw)
         if type_ != "answer_delta":
             self.steps.append(step)
         return step

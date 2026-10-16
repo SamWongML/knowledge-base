@@ -151,7 +151,10 @@ def parse_bytes(data: bytes, *, filename: str, mime_type: str | None = None) -> 
 
 def _markitdown(data: bytes, ext: str) -> str:
     try:
-        from markitdown import MarkItDown, StreamInfo  # type: ignore[import-not-found]
+        from markitdown import (  # pyright: ignore[reportMissingImports] - optional extra
+            MarkItDown,
+            StreamInfo,
+        )
     except ImportError as exc:
         raise ParseError(
             f"{ext or 'binary'} files need the optional parser: install with "

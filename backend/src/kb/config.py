@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     job_lease_seconds: int = 300
     chunk_target_tokens: int = 384
     chunk_overlap_tokens: int = 48
-    max_upload_mb: int = 100
+    max_upload_mb: int = 100  # per file, and per JSON request body
+    max_request_mb: int = 512  # whole multipart upload request (several files)
     # Generate an LLM "situating context" per chunk (Anthropic Contextual Retrieval).
     contextual_chunks: bool = False
 

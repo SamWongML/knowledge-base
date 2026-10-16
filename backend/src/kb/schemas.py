@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 DocumentStatus = Literal["pending", "processing", "ready", "failed"]
+StepType = Literal["plan", "search", "read", "reflect", "answer_delta", "answer", "error"]
 SearchMode = Literal["hybrid", "lexical", "semantic"]
 
 
@@ -172,7 +173,7 @@ class Citation(Model):
 class AgentStep(Model):
     """One step of the agent loop, streamed to clients as it happens."""
 
-    type: Literal["plan", "search", "read", "reflect", "answer_delta", "answer", "error"]
+    type: StepType
     message: str = ""
     query: str | None = None
     hits: list[SearchHit] | None = None

@@ -2,7 +2,8 @@
 
 Base URL: `http://127.0.0.1:8787` (behind Caddy in production). All JSON. Pydantic models live in
 `backend/src/kb/schemas.py` and are the source of truth; FastAPI publishes them at `/openapi.json`.
-Write endpoints require `Authorization: Bearer $KB_API_TOKEN` when the server has a token set.
+When the server has `KB_API_TOKEN` set, every endpoint except `/api/health` (and `/mcp`) requires
+`Authorization: Bearer $KB_API_TOKEN`.
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
@@ -22,7 +23,7 @@ Write endpoints require `Authorization: Bearer $KB_API_TOKEN` when the server ha
 | POST | `/api/search` | `SearchRequest` | `SearchResponse` |
 | POST | `/api/ask` | `AskRequest` | `AskResponse` |
 | POST | `/api/ask/stream` | `AskRequest` | SSE: `event: step` data=`AgentStep` … then `event: done` data=`AskResponse`, or `event: error` |
-| GET | `/api/events` | – | SSE: `event: document.status` data=`{id, collection_id, status, title, error, chunk_count}`; `event: ping` every 15s |
+| GET | `/api/events` | – | SSE: `event: document.status` data=`{id, collection_id, status, title, error, chunk_count}`, `event: document.updated`, `event: document.deleted`; `event: ping` every 15s |
 | GET | `/api/queries/recent?limit=` | – | `{query, mode, created_at}[]` |
 | * | `/mcp` | MCP Streamable HTTP | MCP tools `kb_search`, `kb_ask`, `kb_read`, `kb_list`, `kb_add`, `kb_update`, `kb_delete`, `kb_collections` |
 

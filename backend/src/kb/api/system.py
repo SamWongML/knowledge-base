@@ -13,12 +13,14 @@ from fastapi import APIRouter, Query
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from kb import __version__
+from kb.api.sse import sse_response
 from kb.db import connection
 from kb.events import broker
 from kb.providers import CircuitOpenError, get_embedder, get_llm, get_reranker
 from kb.schemas import ComponentHealth, Health, Model, Stats
 
 router = APIRouter(tags=["system"])
+public_router = APIRouter(tags=["system"])
 
 HEALTH_TIMEOUT_S = 3.0
 HEALTH_CACHE_S = 10.0
@@ -77,7 +79,7 @@ _health_cache: tuple[float, Health] | None = None
 _health_lock = asyncio.Lock()
 
 
-@router.get("/health", response_model=Health)
+@public_router.get("/health", response_model=Health)
 async def health(fresh: bool = False) -> Health:
     """Probe every component concurrently. ``down`` only when the database is unreachable."""
     global _health_cache
@@ -135,7 +137,7 @@ async def events() -> EventSourceResponse:
                     "data": json.dumps(event, default=str),
                 }
 
-    return EventSourceResponse(
+    return sse_response(
         stream(),
         ping=PING_S,
         ping_message_factory=lambda: ServerSentEvent(event="ping", data="{}"),

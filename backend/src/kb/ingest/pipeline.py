@@ -18,7 +18,7 @@ from uuid import UUID
 import structlog
 
 from kb.config import get_settings
-from kb.db import connection
+from kb.db import LONG_STATEMENT_TIMEOUT, connection
 from kb.ingest import queue
 from kb.ingest.chunking import chunk_markdown
 from kb.ingest.contextual import build_contexts
@@ -135,8 +135,10 @@ async def ingest_document(document_id: UUID) -> Outcome:
             vectors = [None] * len(chunks)
 
         async with connection() as conn, conn.transaction():
+            await conn.execute(f"set local statement_timeout = '{LONG_STATEMENT_TIMEOUT}'")
             cur = await conn.execute(
-                "select content_hash from documents where id = %s for update", (document_id,)
+                "select content_hash, collection_id from documents where id = %s for update",
+                (document_id,),
             )
             current = await cur.fetchone()
             if current is None:
@@ -156,7 +158,7 @@ async def ingest_document(document_id: UUID) -> Outcome:
                     await copy.write_row(
                         (
                             document_id,
-                            doc["collection_id"],
+                            current["collection_id"],  # may have moved since the run began
                             chunk.ord,
                             chunk.heading_path,
                             chunk.content,
@@ -207,6 +209,7 @@ async def reembed_document(document_id: UUID) -> Outcome:
         return "noop"
     vectors = await embed_all([embed_text(r["context"], r["content"]) for r in rows])
     async with connection() as conn, conn.transaction(), conn.cursor() as cur:
+        await cur.execute(f"set local statement_timeout = '{LONG_STATEMENT_TIMEOUT}'")
         # Chunks replaced by a concurrent re-ingest simply no longer match.
         await cur.executemany(
             "update chunks set embedding = %s::halfvec where id = %s and embedding is null",

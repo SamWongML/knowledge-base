@@ -21,9 +21,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from psycopg import AsyncConnection
-
 from kb.config import get_settings
+from kb.db import Conn
 
 CHANNEL = "kb_jobs"
 INGEST_DOCUMENT = "ingest_document"
@@ -58,7 +57,7 @@ def backoff_seconds(attempts: int) -> float:
 
 
 async def enqueue(
-    conn: AsyncConnection,
+    conn: Conn,
     kind: str,
     payload: dict[str, Any],
     *,
@@ -98,7 +97,7 @@ def _get(row: Any, key: str) -> Any:
 
 
 async def claim(
-    conn: AsyncConnection,
+    conn: Conn,
     worker_id: str,
     *,
     kinds: list[str] | None = None,
@@ -138,7 +137,7 @@ async def claim(
     )
 
 
-async def heartbeat(conn: AsyncConnection, job: Job, *, lease_s: int | None = None) -> bool:
+async def heartbeat(conn: Conn, job: Job, *, lease_s: int | None = None) -> bool:
     """Extend the lease. False means the lease was lost (expired and reclaimed elsewhere)."""
     lease = lease_s or get_settings().job_lease_seconds
     cur = await conn.execute(
@@ -151,7 +150,7 @@ async def heartbeat(conn: AsyncConnection, job: Job, *, lease_s: int | None = No
     return cur.rowcount == 1
 
 
-async def complete(conn: AsyncConnection, job: Job) -> None:
+async def complete(conn: Conn, job: Job) -> None:
     await conn.execute(
         """
         update jobs set status = 'done', lease_until = null, last_error = null
@@ -161,7 +160,7 @@ async def complete(conn: AsyncConnection, job: Job) -> None:
     )
 
 
-async def fail(conn: AsyncConnection, job: Job, error: str) -> bool:
+async def fail(conn: Conn, job: Job, error: str) -> bool:
     """Record a failure: re-queue with backoff, or mark failed. Returns True if final."""
     final = job.final_attempt
     await conn.execute(
@@ -183,7 +182,7 @@ async def fail(conn: AsyncConnection, job: Job, error: str) -> bool:
     return final
 
 
-async def release(conn: AsyncConnection, job: Job, *, delay_s: float = 0.0) -> None:
+async def release(conn: Conn, job: Job, *, delay_s: float = 0.0) -> None:
     """Hand a job back without counting the attempt (shutdown, resource busy)."""
     await conn.execute(
         """
@@ -197,7 +196,7 @@ async def release(conn: AsyncConnection, job: Job, *, delay_s: float = 0.0) -> N
     await conn.execute("select pg_notify(%s, %s)", (CHANNEL, job.kind))
 
 
-async def reclaim_expired(conn: AsyncConnection) -> int:
+async def reclaim_expired(conn: Conn) -> int:
     """Re-queue (or fail, when out of attempts) jobs whose worker stopped heartbeating."""
     cur = await conn.execute(
         """
@@ -213,7 +212,7 @@ async def reclaim_expired(conn: AsyncConnection) -> int:
     return cur.rowcount
 
 
-async def prune(conn: AsyncConnection, *, keep_days: int = 7) -> int:
+async def prune(conn: Conn, *, keep_days: int = 7) -> int:
     """Delete finished jobs older than ``keep_days`` (failed jobs are kept for inspection)."""
     cur = await conn.execute(
         "delete from jobs where status = 'done' and updated_at < now() - make_interval(days => %s)",

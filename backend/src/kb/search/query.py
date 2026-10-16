@@ -120,7 +120,7 @@ def highlight_terms(text: str) -> list[str]:
 def _merge(current: list[str] | None, extra: list[str]) -> list[str] | None:
     if not extra:
         return current
-    merged = dict.fromkeys([*(current or []), *extra])
+    merged: dict[str, None] = dict.fromkeys([*(current or []), *extra])
     return list(merged)
 
 

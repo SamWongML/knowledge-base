@@ -11,10 +11,10 @@ import hashlib
 from typing import Any, LiteralString
 from uuid import UUID
 
-from psycopg import AsyncConnection, errors
+from psycopg import errors
 from psycopg.types.json import Jsonb
 
-from kb.db import connection
+from kb.db import LONG_STATEMENT_TIMEOUT, Conn, connection
 from kb.ingest import queue
 from kb.ingest.parsers import (
     ParsedDocument,
@@ -30,6 +30,7 @@ from kb.schemas import (
     Document,
     DocumentIn,
     DocumentPatch,
+    DocumentStatus,
     DocumentSummary,
     IngestAccepted,
     Page,
@@ -52,7 +53,7 @@ _SUMMARY_COLS = """
 """
 
 
-async def _collection_id(conn: AsyncConnection, slug: str) -> UUID:
+async def _collection_id(conn: Conn, slug: str) -> UUID:
     cur = await conn.execute("select id from collections where slug = %s", (slug,))
     row = await cur.fetchone()
     if row is None:
@@ -60,7 +61,7 @@ async def _collection_id(conn: AsyncConnection, slug: str) -> UUID:
     return row["id"]
 
 
-async def _enqueue_ingest(conn: AsyncConnection, doc_id: UUID) -> None:
+async def _enqueue_ingest(conn: Conn, doc_id: UUID) -> None:
     await queue.enqueue(
         conn,
         queue.INGEST_DOCUMENT,
@@ -89,7 +90,7 @@ async def _store(
     source_uri: str | None,
     tags: list[str],
     metadata: dict[str, Any],
-    status: str = "pending",
+    status: DocumentStatus = "pending",
     error: str | None = None,
     digest: str | None = None,
 ) -> IngestAccepted:
@@ -140,7 +141,7 @@ async def _store(
             if row is not None:
                 if status == "pending":
                     await _enqueue_ingest(conn, row["id"])
-                return IngestAccepted(id=row["id"], status=status)  # type: ignore[arg-type]
+                return IngestAccepted(id=row["id"], status=status)
             cur = await conn.execute(
                 "select id, status from documents where collection_id = %s and content_hash = %s",
                 (coll_id, digest),
@@ -153,7 +154,7 @@ async def _store(
 
 
 async def _replace(
-    conn: AsyncConnection,
+    conn: Conn,
     existing: dict[str, Any],
     parsed: ParsedDocument,
     digest: str,
@@ -291,7 +292,8 @@ async def list_documents(
             f"select count(*) as n from documents d where {clause}",
             params,
         )
-        total = (await cur.fetchone())["n"]  # type: ignore[index]
+        count_row = await cur.fetchone()
+        total = count_row["n"] if count_row else 0
         cur = await conn.execute(
             f"""
             select {_SUMMARY_COLS}
@@ -361,6 +363,7 @@ async def update_document(id: UUID, patch: DocumentPatch) -> Document | None:
                         [*params, id],
                     )
                 if new_coll is not None:
+                    await conn.execute(f"set local statement_timeout = '{LONG_STATEMENT_TIMEOUT}'")
                     await conn.execute(
                         "update chunks set collection_id = %s where document_id = %s",
                         (new_coll, id),

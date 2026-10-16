@@ -152,7 +152,7 @@ class Worker:
         finally:
             for task in [*background, stopper, *consumers]:
                 task.cancel()
-            await asyncio.gather(*background, stopper, return_exceptions=True)  # pyright: ignore[reportCallIssue, reportArgumentType]
+            await asyncio.gather(*background, stopper, return_exceptions=True)
             log.info("worker.stopped", worker_id=self.worker_id)
 
     async def _consume(self, stop: asyncio.Event) -> None:
@@ -165,7 +165,13 @@ class Worker:
                 log.warning("worker.claim_failed", error=str(exc))
                 job = None
             if job is not None:
-                await process_job(job)
+                try:
+                    await process_job(job)
+                except Exception as exc:
+                    # Recording the outcome failed (database down?). The lease expires and
+                    # the job is reclaimed; this consumer must survive to keep working.
+                    log.warning("worker.job_bookkeeping_failed", job_id=job.id, error=str(exc))
+                    await asyncio.sleep(BUSY_RETRY_S)
                 continue
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), POLL_INTERVAL_S)

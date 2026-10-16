@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from sse_starlette import EventSourceResponse
 
 from kb.agent.loop import ask, ask_stream
+from kb.api.sse import sse_response
 from kb.schemas import AskRequest, AskResponse
 
 router = APIRouter(tags=["ask"])
@@ -42,7 +43,7 @@ async def ask_stream_endpoint(req: AskRequest) -> EventSourceResponse:
             log.exception("ask.stream_failed")
             yield {"event": "error", "data": json.dumps({"detail": str(exc) or type(exc).__name__})}
 
-    return EventSourceResponse(
+    return sse_response(
         events(),
         ping=PING_S,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

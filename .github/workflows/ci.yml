@@ -52,7 +52,6 @@ jobs:
         run: uv run ruff format --check src tests
       - name: Pyright
         run: uv run pyright
-        continue-on-error: true   # non-blocking until the codebase is pyright-clean
       - name: Pytest
         run: uv run pytest -q
 

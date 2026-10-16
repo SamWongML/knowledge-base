@@ -49,6 +49,9 @@ class EventBroker:
                 ) as conn:
                     await conn.execute(f"listen {CHANNEL}")
                     backoff = 1.0
+                    # Events published while we were not listening are lost: tell local
+                    # listeners (e.g. the search cache) to resynchronise.
+                    self._run_listeners({"type": "document.resync"})
                     async for note in conn.notifies():
                         self.publish_local(json.loads(note.payload))
             except asyncio.CancelledError:
@@ -62,12 +65,15 @@ class EventBroker:
         """Register a cheap synchronous callback run for every event (e.g. cache invalidation)."""
         self._listeners.append(callback)
 
-    def publish_local(self, event: dict[str, Any]) -> None:
+    def _run_listeners(self, event: dict[str, Any]) -> None:
         for callback in self._listeners:
             try:
                 callback(event)
             except Exception as exc:
                 log.warning("events.listener_failed", error=str(exc))
+
+    def publish_local(self, event: dict[str, Any]) -> None:
+        self._run_listeners(event)
         for queue in list(self._subscribers):
             with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait(event)
@@ -85,6 +91,6 @@ class EventBroker:
 broker = EventBroker()
 
 
-async def notify(conn: AsyncConnection, event: dict[str, Any]) -> None:
+async def notify(conn: AsyncConnection[Any], event: dict[str, Any]) -> None:
     """Publish an event to every API process (payloads must stay under 8 kB)."""
     await conn.execute("select pg_notify(%s, %s)", (CHANNEL, json.dumps(event, default=str)))

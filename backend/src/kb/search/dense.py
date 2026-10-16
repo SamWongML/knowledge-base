@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import time
 
+from psycopg import sql
+
 from kb.db import connection
 from kb.providers import get_embedder
 from kb.schemas import SearchFilters
@@ -31,7 +33,7 @@ async def dense_search(
     """Return ``[(chunk_id, cosine_similarity)]`` best first."""
     fsql, params = filter_sql(filters)
     params |= {"v": to_halfvec(vector), "limit": limit}
-    sql = (
+    query = (
         "select c.id, c.embedding <=> %(v)s::halfvec as dist from chunks c "
         "where c.embedding is not null"
         + fsql
@@ -39,9 +41,11 @@ async def dense_search(
     )
     async with connection() as conn, conn.transaction():
         await conn.execute("set local statement_timeout = '10s'")
-        await conn.execute(f"set local hnsw.ef_search = {max(EF_SEARCH, limit)}")
+        await conn.execute(
+            sql.SQL("set local hnsw.ef_search = {}").format(sql.Literal(max(EF_SEARCH, limit)))
+        )
         await conn.execute("set local hnsw.iterative_scan = relaxed_order")
-        cur = await conn.execute(sql, params)  # type: ignore[arg-type]
+        cur = await conn.execute(query, params)
         rows = await cur.fetchall()
     hits = [(int(r["id"]), 1.0 - float(r["dist"])) for r in rows]
     hits.sort(key=lambda h: h[1], reverse=True)

@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import resources
-from typing import Any
+from typing import Any, Final
 
 import structlog
 from psycopg import AsyncConnection
@@ -17,7 +17,14 @@ from kb.config import Settings, get_settings
 
 log = structlog.get_logger(__name__)
 
-_pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
+Conn = AsyncConnection[dict[str, Any]]
+"""A pooled connection whose rows are dicts (the only kind of connection the app hands out)."""
+
+_pool: AsyncConnectionPool[Conn] | None = None
+
+# For the few bulk writes whose cost grows with document size (swapping or re-homing all
+# chunks of a document updates every HNSW/BM25 index entry): far above the pool default.
+LONG_STATEMENT_TIMEOUT: Final = "10min"
 
 # Arbitrary constant used as the advisory-lock key so concurrent processes never
 # race to apply migrations.
@@ -34,14 +41,14 @@ def _conninfo(settings: Settings) -> str:
 
 async def open_pool(
     settings: Settings | None = None,
-) -> AsyncConnectionPool[AsyncConnection[dict[str, Any]]]:
+) -> AsyncConnectionPool[Conn]:
     global _pool
     if _pool is not None:
         return _pool
     settings = settings or get_settings()
     _pool = AsyncConnectionPool(
         _conninfo(settings),
-        connection_class=AsyncConnection[dict[str, Any]],
+        connection_class=Conn,
         min_size=settings.db_pool_min,
         max_size=settings.db_pool_max,
         kwargs={
@@ -63,14 +70,14 @@ async def close_pool() -> None:
         _pool = None
 
 
-def pool() -> AsyncConnectionPool[AsyncConnection[dict[str, Any]]]:
+def pool() -> AsyncConnectionPool[Conn]:
     if _pool is None:
         raise RuntimeError("database pool is not open; call open_pool() first")
     return _pool
 
 
 @asynccontextmanager
-async def connection() -> AsyncIterator[AsyncConnection[dict[str, Any]]]:
+async def connection() -> AsyncIterator[Conn]:
     """Borrow an autocommit connection. Use ``async with conn.transaction():`` for atomic work."""
     async with pool().connection() as conn:
         yield conn
@@ -78,7 +85,7 @@ async def connection() -> AsyncIterator[AsyncConnection[dict[str, Any]]]:
 
 def _migration_files() -> list[tuple[str, str]]:
     root = resources.files("kb") / "migrations"
-    files = sorted(p for p in root.iterdir() if p.name.endswith(".sql"))
+    files = sorted((p for p in root.iterdir() if p.name.endswith(".sql")), key=lambda p: p.name)
     return [(p.name, p.read_text(encoding="utf-8")) for p in files]
 
 
@@ -105,7 +112,7 @@ async def migrate(settings: Settings | None = None) -> list[str]:
                     continue
                 sql = sql.replace("{{EMBEDDING_DIM}}", str(settings.embedding_dim))
                 async with conn.transaction():
-                    await conn.execute(sql)  # type: ignore[arg-type]
+                    await conn.execute(sql.encode())  # trusted file; bytes skip %-parsing
                     await conn.execute(
                         "insert into schema_migrations(name, checksum) values (%s, %s)",
                         (name, hashlib.sha256(sql.encode()).hexdigest()),

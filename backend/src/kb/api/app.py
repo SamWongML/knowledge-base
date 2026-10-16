@@ -6,16 +6,23 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+import psycopg
+import structlog
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from psycopg_pool import PoolTimeout
+from starlette.routing import Route
 
 from kb import __version__
+from kb.api.limits import BodySizeLimit
 from kb.config import get_settings
 from kb.db import close_pool, migrate, open_pool
 from kb.logging import setup_logging
+
+log = structlog.get_logger(__name__)
 
 
 def create_app(*, run_migrations: bool = True) -> FastAPI:
@@ -65,6 +72,7 @@ def create_app(*, run_migrations: bool = True) -> FastAPI:
         openapi_url="/api/openapi.json",
     )
     app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.add_middleware(BodySizeLimit, limit_for=_body_limit)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -73,15 +81,42 @@ def create_app(*, run_migrations: bool = True) -> FastAPI:
     )
 
     from kb.api import ask, collections, documents, search, system
+    from kb.api.deps import require_token
 
+    # When KB_API_TOKEN is set every route needs it (the knowledge base is private data);
+    # only /api/health stays open for container and uptime checks.
+    app.include_router(system.public_router, prefix="/api")
     for module in (system, collections, documents, search, ask):
-        app.include_router(module.router, prefix="/api")
+        app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
 
     if mcp_app is not None:
-        app.add_route("/mcp", mcp_app, include_in_schema=False)
+        # A plain Route (not a Mount) so ``/mcp`` is served without a ``/mcp/`` redirect;
+        # Starlette treats a non-function endpoint as a raw ASGI app.
+        app.router.routes.append(Route("/mcp", endpoint=mcp_app, include_in_schema=False))
 
+    _add_error_handlers(app)
     _mount_spa(app, Path(settings.static_dir))
     return app
+
+
+def _body_limit(path: str) -> int:
+    s = get_settings()
+    return (s.max_request_mb if path.endswith("/upload") else s.max_upload_mb) << 20
+
+
+def _add_error_handlers(app: FastAPI) -> None:
+    """Database overload/outage is a 503 the client may retry, not an opaque 500."""
+
+    @app.exception_handler(psycopg.OperationalError)
+    async def db_unavailable(_request: Request, exc: psycopg.OperationalError) -> JSONResponse:
+        if isinstance(exc, PoolTimeout):
+            detail = "server busy: no database connection available, retry shortly"
+        elif isinstance(exc, psycopg.errors.QueryCanceled):
+            detail = "database query timed out"
+        else:
+            detail = "database unavailable"
+        log.warning("api.db_error", error_type=type(exc).__name__, error=str(exc)[:300])
+        return JSONResponse({"detail": detail}, status_code=503, headers={"Retry-After": "2"})
 
 
 def _mount_spa(app: FastAPI, dist: Path) -> None:
@@ -93,6 +128,8 @@ def _mount_spa(app: FastAPI, dist: Path) -> None:
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa(path: str) -> FileResponse:
+        if path == "api" or path.startswith(("api/", "mcp/")):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")  # never HTML for APIs
         candidate = (dist / path).resolve()
         if path and candidate.is_file() and dist.resolve() in candidate.parents:
             return FileResponse(candidate)

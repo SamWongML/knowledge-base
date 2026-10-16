@@ -8,40 +8,49 @@ become required ``###`` (phrase) matches over content or heading.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
+
+from psycopg import sql
 
 from kb.db import connection
 from kb.schemas import SearchFilters
 from kb.search.filters import filter_sql
 from kb.search.query import ParsedQuery
 
-HEADING_BOOST = 0.6
-CONTEXT_BOOST = 0.5
+# Kept as SQL literals so the statement text is a compile-time constant.
+HEADING_BOOST: Final = "0.6"
+CONTEXT_BOOST: Final = "0.5"
 
 
-def build_lexical_sql(pq: ParsedQuery, filters: SearchFilters, limit: int) -> tuple[str, dict]:
+def build_lexical_sql(
+    pq: ParsedQuery, filters: SearchFilters, limit: int
+) -> tuple[sql.Composed, dict[str, Any]]:
+    """Build the BM25 query. All user text is bound as parameters, never spliced."""
     params: dict[str, Any] = {"limit": limit}
-    conds: list[str] = []
+    conds: list[sql.Composable] = []
     if pq.text:
         params["q"] = pq.text
         conds.append(
-            "(c.content ||| %(q)s"
-            f" or c.heading_path ||| %(q)s::pdb.boost({HEADING_BOOST})"
-            f" or c.context ||| %(q)s::pdb.boost({CONTEXT_BOOST}))"
+            sql.SQL(
+                "(c.content ||| %(q)s"
+                f" or c.heading_path ||| %(q)s::pdb.boost({HEADING_BOOST})"
+                f" or c.context ||| %(q)s::pdb.boost({CONTEXT_BOOST}))"
+            )
         )
     for i, phrase in enumerate(pq.phrases):
         key = f"p{i}"
         params[key] = phrase
-        conds.append(f"(c.content ### %({key})s or c.heading_path ### %({key})s)")
+        conds.append(
+            sql.SQL("(c.content ### {k} or c.heading_path ### {k})").format(k=sql.Placeholder(key))
+        )
     fsql, fparams = filter_sql(filters)
     params.update(fparams)
-    sql = (
-        "select c.id, paradedb.score(c.id) as score from chunks c where "
-        + " and ".join(conds)
+    query = sql.SQL(
+        "select c.id, paradedb.score(c.id) as score from chunks c where {conds}"
         + fsql
         + " order by score desc limit %(limit)s"
-    )
-    return sql, params
+    ).format(conds=sql.SQL(" and ").join(conds))
+    return query, params
 
 
 async def lexical_search(
@@ -50,9 +59,9 @@ async def lexical_search(
     """Return ``[(chunk_id, bm25_score)]`` best first."""
     if pq.empty:
         return []
-    sql, params = build_lexical_sql(pq, filters, limit)
+    query, params = build_lexical_sql(pq, filters, limit)
     async with connection() as conn, conn.transaction():
         await conn.execute("set local statement_timeout = '10s'")
-        cur = await conn.execute(sql, params)  # type: ignore[arg-type]
+        cur = await conn.execute(query, params)
         rows = await cur.fetchall()
     return [(int(r["id"]), float(r["score"])) for r in rows]

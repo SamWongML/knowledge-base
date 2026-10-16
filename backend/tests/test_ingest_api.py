@@ -456,7 +456,7 @@ async def test_events_stream_yields_document_status(app):
     await iterator.aclose()
 
 
-async def test_write_endpoints_require_token_when_configured(client, monkeypatch):
+async def test_endpoints_require_token_when_configured(client, monkeypatch):
     from pydantic import SecretStr
 
     monkeypatch.setattr(get_settings(), "api_token", SecretStr("s3cret"))
@@ -464,7 +464,7 @@ async def test_write_endpoints_require_token_when_configured(client, monkeypatch
     assert (
         await client.post("/api/collections", json={"slug": "zz", "name": "Z"})
     ).status_code == 401
-    assert (await client.get("/api/documents")).status_code == 200
+    assert (await client.get("/api/documents")).status_code == 401
     ok = await client.post(
         "/api/documents",
         json={"content": f"token {uuid.uuid4().hex}"},

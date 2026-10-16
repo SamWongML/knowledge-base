@@ -127,9 +127,11 @@ def parse_ranking(text: str, n: int) -> dict[int, int] | None:
         if not isinstance(item, dict):
             continue
         raw_id, raw_rel = item.get("id"), item.get("relevance", item.get("score"))
+        if not isinstance(raw_rel, int | float | str):
+            continue
         try:
             idx = int(str(raw_id).strip("[] ")) - 1
-            rel = round(float(raw_rel))  # type: ignore[arg-type]
+            rel = round(float(raw_rel))
         except (TypeError, ValueError):
             continue
         if 0 <= idx < n and idx not in out:

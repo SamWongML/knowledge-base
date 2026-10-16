@@ -42,10 +42,15 @@ class SearchCache:
         self._data.move_to_end(key)
         return resp.model_copy(deep=True)
 
-    def put(self, key: str, resp: SearchResponse) -> None:
+    def put(self, key: str, resp: SearchResponse, version: int | None = None) -> None:
+        """Store ``resp``. Pass the ``version`` read *before* computing it: a response built
+        while an invalidation arrived is then discarded instead of outliving the change."""
         if self.ttl_s <= 0:
             return
-        self._data[key] = (time.monotonic(), self.version, resp.model_copy(deep=True))
+        version = self.version if version is None else version
+        if version != self.version:
+            return
+        self._data[key] = (time.monotonic(), version, resp.model_copy(deep=True))
         self._data.move_to_end(key)
         while len(self._data) > self.max_entries:
             self._data.popitem(last=False)

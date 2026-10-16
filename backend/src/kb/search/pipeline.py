@@ -152,6 +152,7 @@ async def search(req: SearchRequest, options: SearchOptions | None = None) -> Se
     run = _Run()
 
     key = _cache_key(req, opts)
+    cache_version = cache.version
     if opts.use_cache and (cached := cache.get(key)) is not None:
         cached.timings = [StageTiming(stage="cache", ms=0.0, detail="hit")]
         cached.total_ms = round((time.perf_counter() - started) * 1000, 2)
@@ -198,7 +199,7 @@ async def search(req: SearchRequest, options: SearchOptions | None = None) -> Se
     hits = [
         SearchHit(
             chunk_id=c.chunk_id,
-            document_id=c.document_id,  # type: ignore[arg-type]
+            document_id=c.document_id,
             document_title=c.title,
             collection=c.collection,
             source_uri=c.source_uri,
@@ -211,6 +212,7 @@ async def search(req: SearchRequest, options: SearchOptions | None = None) -> Se
             tags=c.tags,
         )
         for c in cands
+        if c.document_id is not None  # hydrate() drops chunks deleted mid-query
     ]
     run.time("postprocess", t)
 
@@ -224,7 +226,7 @@ async def search(req: SearchRequest, options: SearchOptions | None = None) -> Se
         total_ms=total_ms,
     )
     if opts.use_cache and not run.degraded:
-        cache.put(key, resp)
+        cache.put(key, resp, cache_version)
     if opts.log_query:
         _spawn(_log_query(req, total_ms, [h.chunk_id for h in hits]))
     return resp
