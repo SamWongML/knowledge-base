@@ -71,7 +71,7 @@ def create_app(*, run_migrations: bool = True) -> FastAPI:
         app.include_router(module.router, prefix="/api")
 
     if mcp_app is not None:
-        app.mount("/mcp", mcp_app)
+        app.add_route("/mcp", mcp_app, include_in_schema=False)
 
     _mount_spa(app, Path(settings.static_dir))
     return app
