@@ -1,0 +1,70 @@
+# Front door for kb. The API serves both /api and the SPA, so Caddy only terminates TLS,
+# compresses, adds security headers and proxies.
+#
+# LAN:       https://{$KB_DOMAIN} with a certificate from Caddy's local CA (`tls internal`).
+#            Trust the root once per client: see deploy/README.md ("Trust the local CA").
+# Tailscale: `tailscale serve --bg --https=443 http://127.0.0.1:8080` (port 8080 is bound to
+#            localhost by compose; Tailscale terminates TLS with a real certificate).
+{
+	# Admin API stays inside the container.
+	admin localhost:2019
+	servers {
+		trusted_proxies static private_ranges 100.64.0.0/10
+	}
+}
+
+(kb_app) {
+	# Streaming endpoints: flush every write, never compress or buffer.
+	@stream path /api/events /api/events/* /api/ask/stream /mcp /mcp/*
+	handle @stream {
+		reverse_proxy api:8787 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy api:8787 {
+			# Uploads can be large and /api/ask can run for a while.
+			transport http {
+				response_header_timeout 300s
+			}
+		}
+	}
+
+	request_body {
+		max_size 110MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$KB_DOMAIN:kb.local} {
+	tls internal
+	import kb_app
+}
+
+# Plain HTTP on 8080 for Tailscale Serve and local health checks (published on 127.0.0.1 only).
+http://:8080 {
+	handle /healthz {
+		respond "ok" 200
+	}
+	import kb_app
+}
