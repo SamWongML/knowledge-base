@@ -1,0 +1,156 @@
+/* Long-form reading typography for the reader and streamed answers.
+   Intentionally unlayered so it wins over Streamdown's utility classes. */
+
+.prose-kb {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  line-height: 1.65;
+  font-optical-sizing: auto;
+  color: var(--foreground);
+  max-width: 68ch;
+  hanging-punctuation: first;
+  text-wrap: pretty;
+}
+
+.prose-kb > * + * {
+  margin-top: 0.9em;
+}
+
+.prose-kb :is(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.12;
+  margin-top: 1.6em;
+  margin-bottom: 0.4em;
+  color: var(--foreground);
+  text-wrap: balance;
+}
+
+.prose-kb h1 {
+  font-size: 2.25rem;
+}
+.prose-kb h2 {
+  font-size: 1.85rem;
+}
+.prose-kb h3 {
+  font-size: 1.45rem;
+}
+.prose-kb h4 {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.prose-kb :is(h1, h2, h3, h4):first-child {
+  margin-top: 0;
+}
+
+.prose-kb p {
+  margin: 0.8em 0 0;
+}
+
+.prose-kb a:not([data-cite]) {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklch, var(--accent) 45%, transparent);
+}
+
+.prose-kb a:not([data-cite]):hover {
+  text-decoration-color: var(--accent);
+}
+
+.prose-kb :is(ul, ol) {
+  padding-left: 1.3em;
+  margin: 0.8em 0 0;
+}
+.prose-kb ul {
+  list-style: none;
+}
+.prose-kb ul > li {
+  position: relative;
+}
+.prose-kb ul > li::before {
+  content: "–";
+  position: absolute;
+  left: -1.1em;
+  color: var(--faint-foreground);
+}
+.prose-kb ol {
+  list-style: decimal;
+}
+.prose-kb ol > li::marker {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  color: var(--muted-foreground);
+}
+.prose-kb li + li {
+  margin-top: 0.3em;
+}
+
+.prose-kb blockquote {
+  border-left: 2px solid var(--accent);
+  padding-left: 1em;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+.prose-kb hr {
+  border: 0;
+  text-align: center;
+  margin: 2em 0;
+}
+.prose-kb hr::after {
+  content: "⁂";
+  color: var(--faint-foreground);
+  letter-spacing: 0.5em;
+}
+
+.prose-kb :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.05em 0.3em;
+}
+
+.prose-kb pre {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.prose-kb table {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  border-collapse: collapse;
+  width: 100%;
+}
+.prose-kb :is(th, td) {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+.prose-kb th {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.prose-kb img {
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+
+/* A compact variant for answers in narrow columns and note previews. */
+.prose-kb.prose-compact {
+  font-size: 1.0625rem;
+}

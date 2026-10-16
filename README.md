@@ -17,6 +17,11 @@ insertions and queries on a single box.
             └──────── llama.cpp (embed, rerank) + Ollama (Qwen3.5) native on Metal ──────────┘
 ```
 
+| Search | Ask |
+|---|---|
+| ![Search](docs/screenshots/search.png) | ![Ask](docs/screenshots/ask.png) |
+| ![Library](docs/screenshots/library.png) | ![Reader](docs/screenshots/reader.png) |
+
 ## Highlights
 
 - **Hybrid retrieval cascade.** BM25 with English stemming and a dense HNSW search over `halfvec`
@@ -92,6 +97,6 @@ Tests and CI use deterministic fake models (`KB_*_PROVIDER=fake`), so no GPU or 
 | `backend/src/kb/agent` | agentic search loop |
 | `backend/src/kb/{mcp,cli}` | MCP server, `kb` CLI |
 | `backend/src/kb/eval` | retrieval evaluation harness |
-| `frontend/` | web app |
+| `frontend/` | web app ("Commonplace") |
 | `skills/knowledge-base` | Agent Skill |
 | `deploy/`, `scripts/`, `compose.yaml`, `justfile` | Mac mini deployment |
