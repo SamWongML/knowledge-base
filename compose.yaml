@@ -1,0 +1,189 @@
+# kb on one Apple Silicon Mac mini.
+#
+#   Native (launchd, Metal):  llama-server embed :8081, llama-server rerank :8082, Ollama :11434
+#   This file (OrbStack / Colima / Docker Desktop):  db, api, worker x2, caddy [, backup]
+#
+# Containers reach the native model servers through host.docker.internal.
+# Configure via .env (copy .env.example). Start with `just up`; see deploy/README.md.
+
+name: kb
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app: &app
+  image: ${KB_IMAGE:-kb:local}
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &app-env
+    KB_ENV: prod
+    KB_LOG_JSON: "true"
+    KB_DATABASE_URL: postgresql://kb:${POSTGRES_PASSWORD:-kb}@db:5432/kb
+    KB_EMBEDDING_BASE_URL: ${KB_EMBEDDING_BASE_URL:-http://host.docker.internal:8081/v1}
+    KB_RERANK_BASE_URL: ${KB_RERANK_BASE_URL:-http://host.docker.internal:8082/v1}
+    KB_LLM_BASE_URL: ${KB_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+  extra_hosts:
+    # Implicit on OrbStack/Docker Desktop; needed on Colima and plain Linux engines.
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    db:
+      condition: service_healthy
+  logging: *logging
+
+services:
+  db:
+    image: paradedb/paradedb:0.26.2-pg18   # PG 18 + pg_search 0.26.2 + pgvector; same as CI
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kb}
+      POSTGRES_DB: kb
+    # Tuned for a 32 GB Mac mini whose container VM has ~8 GB. Scale shared_buffers to ~25%
+    # of the VM's memory (16 GB Mac: 1GB; 64 GB Mac: 4GB) via .env.
+    command:
+      - postgres
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-200}
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-2GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-6GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-32MB}
+      # HNSW / BM25 index builds: keep the whole graph in memory and build in parallel.
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-1GB}
+      - -c
+      - max_parallel_maintenance_workers=4
+      - -c
+      - max_worker_processes=16
+      - -c
+      - max_parallel_workers=8
+      - -c
+      - max_parallel_workers_per_gather=2
+      # WAL: fewer, smoother checkpoints under bulk ingestion; compressed full-page writes.
+      - -c
+      - wal_compression=zstd
+      - -c
+      - max_wal_size=${PG_MAX_WAL_SIZE:-4GB}
+      - -c
+      - min_wal_size=1GB
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_buffers=64MB
+      # SSD storage.
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      # Guard rails: a stuck transaction must not block vacuum / bloat indexes.
+      - -c
+      - idle_in_transaction_session_timeout=60s
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_checkpoints=on
+    shm_size: 1g          # parallel workers + HNSW builds use /dev/shm (Docker default is 64 MB)
+    stop_grace_period: 60s
+    volumes:
+      - pgdata:/var/lib/postgresql   # PG 18 images keep PGDATA in /var/lib/postgresql/18/docker
+    ports:
+      - "127.0.0.1:${KB_PG_PORT:-5432}:5432"   # localhost only: psql, `just dev`, backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kb -d kb -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging: *logging
+
+  api:
+    <<: *app
+    command: ["kb-api"]
+    environment:
+      <<: *app-env
+      KB_WORKERS: ${KB_WORKERS:-2}
+    ports:
+      - "127.0.0.1:8787:8787"   # direct access for MCP clients / smoke tests on the host
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/health', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+
+  worker:
+    <<: *app
+    command: ["kb-worker"]
+    deploy:
+      replicas: ${KB_WORKER_REPLICAS:-2}
+    healthcheck:
+      disable: true   # no HTTP port; jobs from a crashed worker are re-leased after KB_JOB_LEASE_SECONDS
+    stop_grace_period: 60s   # let the current job finish
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      KB_DOMAIN: ${KB_DOMAIN:-kb.local}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"             # HTTP/3
+      - "127.0.0.1:8080:8080"     # plain HTTP for `tailscale serve` (localhost only)
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # includes the local CA (tls internal) - keep it
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+  # Optional: in-compose nightly pg_dump (`docker compose --profile backup up -d`).
+  # The launchd job (deploy/launchd/com.kb.backup.plist -> scripts/backup.sh) is preferred on
+  # macOS because it also runs restic; use one or the other.
+  backup:
+    image: paradedb/paradedb:0.26.2-pg18
+    profiles: ["backup"]
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/scripts/pg-dump-loop.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: kb
+      PGPASSWORD: ${POSTGRES_PASSWORD:-kb}
+      PGDATABASE: kb
+      BACKUP_DIR: /backups
+      BACKUP_AT: ${KB_BACKUP_AT:-03:15}
+      KEEP_DAILY: ${KB_BACKUP_KEEP_DAILY:-7}
+      KEEP_WEEKLY: ${KB_BACKUP_KEEP_WEEKLY:-4}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./scripts/pg-dump-loop.sh:/scripts/pg-dump-loop.sh:ro
+      - ${KB_BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

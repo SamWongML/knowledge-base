@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  FULLY-NATIVE alternative only (no Docker): kb ingestion worker, run with `uv run kb-worker`
+  from __REPO__/backend against Postgres.app 18 + ParadeDB pg_search. Installed by
+  `scripts/macos-setup.sh` with the native flag. Settings come from __REPO__/.env, loaded by scripts/run-native.sh.
+  Template: __HOME__ / __REPO__ / __BREW__ are substituted by scripts/macos-setup.sh.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.kb.worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/run-native.sh</string>
+    <string>kb-worker</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>__BREW__/bin:/Applications/Postgres.app/Contents/Versions/18/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key><string>__HOME__</string>
+  </dict>
+  <key>WorkingDirectory</key><string>__REPO__/backend</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>ExitTimeOutSeconds</key><integer>60</integer>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/kb/worker.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/kb/worker.log</string>
+</dict>
+</plist>

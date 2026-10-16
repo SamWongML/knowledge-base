@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  kb reranker: llama.cpp llama-server on Metal, Qwen3-Reranker-0.6B (Q8_0, ggml-org conversion
+  that keeps the classification head), port 8082, Cohere/Jina-style /v1/rerank.
+  A broken GGUF still answers 200 with ~0.0 scores: scripts/check-models.sh guards against it.
+  Template: __HOME__ / __REPO__ / __BREW__ are substituted by scripts/macos-setup.sh.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.kb.llama-rerank</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__BREW__/bin/llama-server</string>
+    <string>--model</string><string>__HOME__/.kb/models/rerank.gguf</string>
+    <string>--alias</string><string>Qwen3-Reranker-0.6B</string>
+    <string>--host</string><string>127.0.0.1</string>
+    <string>--port</string><string>8082</string>
+    <string>--reranking</string>
+    <string>--pooling</string><string>rank</string>
+    <string>--n-gpu-layers</string><string>999</string>
+    <string>--ctx-size</string><string>16384</string>
+    <string>--parallel</string><string>4</string>
+    <string>--batch-size</string><string>4096</string>
+    <string>--ubatch-size</string><string>4096</string>
+    <string>--metrics</string>
+  </array>
+  <key>WorkingDirectory</key><string>__HOME__/.kb</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/kb/llama-rerank.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/kb/llama-rerank.log</string>
+</dict>
+</plist>

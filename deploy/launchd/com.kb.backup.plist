@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  kb nightly backup at 03:15: pg_dump -Fc with 7 daily / 4 weekly retention, then restic if
+  RESTIC_REPOSITORY is set in __REPO__/.env. launchd runs a missed job after the Mac wakes.
+  Template: __HOME__ / __REPO__ / __BREW__ are substituted by scripts/macos-setup.sh.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.kb.backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/backup.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>__HOME__/.orbstack/bin:__BREW__/bin:__BREW__/sbin:/Applications/Postgres.app/Contents/Versions/18/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key><string>__HOME__</string>
+  </dict>
+  <key>WorkingDirectory</key><string>__REPO__</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>15</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/kb/backup.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/kb/backup.log</string>
+</dict>
+</plist>

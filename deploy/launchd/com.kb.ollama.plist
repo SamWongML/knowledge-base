@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  kb chat / agent LLMs: `ollama serve` on Metal, port 11434 (OpenAI-compatible /v1).
+  Use EITHER this agent OR Ollama.app / `brew services start ollama` - never two at once
+  (port clash). With Ollama.app, set the same variables with `launchctl setenv` instead
+  (see deploy/README.md).
+  OLLAMA_CONTEXT_LENGTH raises Ollama's small default context so the agent sees all evidence.
+  Template: __HOME__ / __BREW__ / __OLLAMA_CONTEXT_LENGTH__ are substituted by macos-setup.sh.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.kb.ollama</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__BREW__/bin/ollama</string>
+    <string>serve</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>__HOME__</string>
+    <key>OLLAMA_HOST</key><string>127.0.0.1:11434</string>
+    <key>OLLAMA_CONTEXT_LENGTH</key><string>__OLLAMA_CONTEXT_LENGTH__</string>
+    <key>OLLAMA_KEEP_ALIVE</key><string>24h</string>
+    <key>OLLAMA_MAX_LOADED_MODELS</key><string>2</string>
+    <key>OLLAMA_NUM_PARALLEL</key><string>2</string>
+    <key>OLLAMA_FLASH_ATTENTION</key><string>1</string>
+    <key>OLLAMA_KV_CACHE_TYPE</key><string>q8_0</string>
+  </dict>
+  <key>WorkingDirectory</key><string>__HOME__</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/kb/ollama.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/kb/ollama.log</string>
+</dict>
+</plist>

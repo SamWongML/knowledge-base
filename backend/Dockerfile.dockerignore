@@ -1,0 +1,13 @@
+# Build-context filter for backend/Dockerfile (context = repo root). Allow-list style.
+*
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/src/
+!frontend/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+**/__pycache__/
+**/*.pyc
+**/.DS_Store
