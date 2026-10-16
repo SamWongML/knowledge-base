@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import structlog
@@ -26,6 +26,7 @@ CHANNEL = "kb_events"
 class EventBroker:
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._listeners: list[Callable[[dict[str, Any]], None]] = []
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -57,7 +58,16 @@ class EventBroker:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
+    def add_listener(self, callback: Callable[[dict[str, Any]], None]) -> None:
+        """Register a cheap synchronous callback run for every event (e.g. cache invalidation)."""
+        self._listeners.append(callback)
+
     def publish_local(self, event: dict[str, Any]) -> None:
+        for callback in self._listeners:
+            try:
+                callback(event)
+            except Exception as exc:
+                log.warning("events.listener_failed", error=str(exc))
         for queue in list(self._subscribers):
             with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait(event)
