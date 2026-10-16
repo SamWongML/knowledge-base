@@ -44,9 +44,16 @@ def create_app(*, run_migrations: bool = True) -> FastAPI:
             for sub in extra_lifespans:
                 await stack.enter_async_context(sub.router.lifespan_context(sub))
             await broker.start()
+            # Dev / single-process mode: run ingestion workers inside the API process. Safe
+            # with several API workers too, since jobs are claimed with SKIP LOCKED.
+            from kb.ingest.worker import embedded_worker_enabled, start_embedded_worker
+
+            stop_worker = await start_embedded_worker() if embedded_worker_enabled() else None
             try:
                 yield
             finally:
+                if stop_worker is not None:
+                    await stop_worker()
                 await broker.stop()
                 await close_pool()
 

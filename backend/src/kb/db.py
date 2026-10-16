@@ -6,6 +6,7 @@ import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import resources
+from typing import Any
 
 import structlog
 from psycopg import AsyncConnection
@@ -16,14 +17,14 @@ from kb.config import Settings, get_settings
 
 log = structlog.get_logger(__name__)
 
-_pool: AsyncConnectionPool | None = None
+_pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
 
 # Arbitrary constant used as the advisory-lock key so concurrent processes never
 # race to apply migrations.
 _MIGRATION_LOCK = 7_402_118_311
 
 
-async def _configure(conn: AsyncConnection) -> None:
+async def _configure(conn: AsyncConnection[Any]) -> None:
     await conn.set_autocommit(True)
 
 
@@ -31,13 +32,16 @@ def _conninfo(settings: Settings) -> str:
     return settings.database_url
 
 
-async def open_pool(settings: Settings | None = None) -> AsyncConnectionPool:
+async def open_pool(
+    settings: Settings | None = None,
+) -> AsyncConnectionPool[AsyncConnection[dict[str, Any]]]:
     global _pool
     if _pool is not None:
         return _pool
     settings = settings or get_settings()
     _pool = AsyncConnectionPool(
         _conninfo(settings),
+        connection_class=AsyncConnection[dict[str, Any]],
         min_size=settings.db_pool_min,
         max_size=settings.db_pool_max,
         kwargs={
@@ -59,14 +63,14 @@ async def close_pool() -> None:
         _pool = None
 
 
-def pool() -> AsyncConnectionPool:
+def pool() -> AsyncConnectionPool[AsyncConnection[dict[str, Any]]]:
     if _pool is None:
         raise RuntimeError("database pool is not open; call open_pool() first")
     return _pool
 
 
 @asynccontextmanager
-async def connection() -> AsyncIterator[AsyncConnection]:
+async def connection() -> AsyncIterator[AsyncConnection[dict[str, Any]]]:
     """Borrow an autocommit connection. Use ``async with conn.transaction():`` for atomic work."""
     async with pool().connection() as conn:
         yield conn
