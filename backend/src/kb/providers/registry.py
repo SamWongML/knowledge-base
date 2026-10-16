@@ -74,6 +74,7 @@ def get_llm(kind: str = "local") -> LLM:
         api_key=_secret(s.llm_api_key),
         timeout=max(s.model_timeout_s, 120.0),
         breaker=_breaker("llm", s),
+        disable_thinking=s.llm_disable_thinking,
     )
 
 

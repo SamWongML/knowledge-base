@@ -136,9 +136,11 @@ class OpenAIChat(LLM):
         api_key: str | None = None,
         timeout: float = 120.0,
         breaker: CircuitBreaker | None = None,
+        disable_thinking: bool = True,
     ) -> None:
         self.name = f"llm:{model}"
         self.model = model
+        self.disable_thinking = disable_thinking
         self._remote = _Remote(base_url, api_key, timeout, breaker or CircuitBreaker(self.name))
 
     def _payload(
@@ -155,6 +157,11 @@ class OpenAIChat(LLM):
         }
         if temperature is not None:
             payload["temperature"] = temperature
+        if self.disable_thinking:
+            # Ollama reads `think`; llama-server / vLLM / LM Studio read chat_template_kwargs.
+            # Servers ignore the field they don't know.
+            payload["think"] = False
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         return payload
 
     async def complete(

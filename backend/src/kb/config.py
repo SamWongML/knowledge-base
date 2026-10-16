@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     anthropic_model: str = "claude-haiku-5-5"
     agent_max_steps: int = 4
+    agent_timeout_s: float = 90.0
+    # Ask local servers for non-thinking mode (Qwen3.x): faster, and steps are schema-constrained.
+    llm_disable_thinking: bool = True
 
     # --- search defaults -----------------------------------------------------------
     search_candidates: int = 100  # per retriever
